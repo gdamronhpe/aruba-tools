@@ -28,6 +28,20 @@ python clearpass/cert_manager/CPPM_CertMgr_Web.py
 
 The app binds to `0.0.0.0:5000` and will open a browser to a LAN-accessible URL.
 
+## Windows EXE (Single File)
+
+Use PyInstaller to create a single-file executable:
+
+```powershell
+.\clearpass\cert_manager\build_exe.ps1
+```
+
+Output will be:
+
+```
+clearpass\cert_manager\dist\CPPM_CertMgr_Web.exe
+```
+
 ## ClearPass API Client Setup
 
 You need an API token for a ClearPass user or API client with permissions to:
@@ -60,24 +74,35 @@ Some users already have an API client; others need to create both the Operator P
 1. Open the existing API client in ClearPass.
 2. Generate or copy the access token.
 3. Paste the token into the UI's **Token** field.
-![Get API Token](screenshots/generate-token.jpg)
+
+     ![Get API Token](screenshots/generate-token.jpg)
 
 ### If you need to create the Operator Profile and API client
 
 If you're unsure about creating API clients, follow your organization's security guidelines.
 
 1. Create an Operator Profile for **Platform Certificate Manager**.
-  ![Operator Profile - Platform Certificate Manager](screenshots/operator-profile-platform-certificate-manager.jpg)
-2. Assign the required permissions.
-  ![Operator Profile Permissions - API Services](screenshots/permissions-api-services.jpg)
-  ![Operator Profile Permissions - Platform](screenshots/permissions-platform.jpg)
-  ![Operator Profile Permissions - Policy Manager](screenshots/permissions-policy-manager.jpg)
-3. Create a new API client and associate it with that operator profile.
-  ![Create API Client](screenshots/create-api-client.jpg)
 
-  ![Create API Client](screenshots/create-api-client-secret.jpg)
+     ![Operator Profile - Platform Certificate Manager](screenshots/operator-profile-platform-certificate-manager.jpg)
+
+2. Assign the required permissions.
+
+     ![Operator Profile Permissions - API Services](screenshots/permissions-api-services.jpg)
+
+     ![Operator Profile Permissions - Platform](screenshots/permissions-platform.jpg)
+
+     ![Operator Profile Permissions - Policy Manager](screenshots/permissions-policy-manager.jpg)
+
+3. Create a new API client and associate it with that operator profile.
+
+     ![Create API Client](screenshots/create-api-client.jpg)
+
+     ![Create API Client](screenshots/create-api-client-secret.jpg)
+
 4. Generate the access token.
-  ![Get API Token](screenshots/generate-token.jpg)
+
+     ![Get API Token](screenshots/generate-token.jpg)
+
 5. Paste the token into the UI's **Token** field.
 
 ## Token Privileges Check
