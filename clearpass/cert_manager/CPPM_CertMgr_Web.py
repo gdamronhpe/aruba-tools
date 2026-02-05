@@ -1,5 +1,5 @@
-#!/usr/bin/env python3
-import os, time, json, datetime, threading, urllib.parse, secrets, webbrowser, warnings, socket, tempfile, pathlib, textwrap, time
+﻿#!/usr/bin/env python3
+import os, time, json, datetime, threading, urllib.parse, secrets, webbrowser, warnings, socket, tempfile, pathlib, textwrap, time, re
 from typing import List, Dict, Any
 from flask import Flask, request, jsonify, make_response, session, render_template_string, send_file, abort
 import requests
@@ -7,7 +7,7 @@ from dateutil.parser import UnknownTimezoneWarning
 from dateutil import tz, parser as dparser
 import atexit, signal
 from cryptography.hazmat.primitives.serialization import pkcs12
-from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives import serialization, hashes
 from cryptography import x509
 import base64
 
@@ -234,6 +234,11 @@ class ClearPassAPI:
             j = {"text": r.text}
         return r.status_code, j
 
+    def list_trust_certs(self):
+        # Returns the list of trust list certificates
+        data = self._get("/api/cert-trust-list")
+        return self._extract_list(data)
+
 # -------------------- Flask app & file hosting --------------------
 app = Flask(__name__)
 app.config["JSONIFY_PRETTYPRINT_REGULAR"] = True
@@ -330,9 +335,9 @@ def index():
 #modal.show { display: flex}
  tr:hover{background:#fafafa}
  .muted{color:#666}
- .topbar{position:sticky;top:0;background:#fff;padding:8px 0;border-bottom:1px solid #eee;z-index:10}
- .th-sort-asc::after{content:" ▲";font-size:12px;color:#666}
- .th-sort-desc::after{content:" ▼";font-size:12px;color:#666}
+ .topbar{position:sticky;top:0;background:#fff;padding:10px 0;border-bottom:1px solid #eee;z-index:10}
+ .th-sort-asc::after{content:" â–²";font-size:12px;color:#666}
+ .th-sort-desc::after{content:" â–¼";font-size:12px;color:#666}
  .badge{display:inline-block;padding:2px 6px;border-radius:4px;background:#eef}
  .danger{color:#b42318}
  .dim{color:#777}
@@ -340,6 +345,11 @@ def index():
  .btn-danger{background:#b42318;color:white;border:none}
  .btn{border:1px solid #ccc;background:#fff}
  .hidden{display:none}
+ .topbar-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px;align-items:start}
+ .panel{border:1px solid #e6e6e6;border-radius:12px;padding:12px;background:#fafafa}
+ .panel-title{font-weight:600;margin-bottom:8px}
+ .stack{display:flex;flex-direction:column;gap:10px}
+ .status-line{margin-top:6px}
 /* --- modal overlay + card (correct selectors) --- */
 #modal{
   position:fixed; inset:0; display:none;
@@ -393,43 +403,65 @@ body.modal-open{ overflow:hidden; }
 </style>
 </head><body>
 <div class="topbar">
-  <div class="row">
-    <strong>Publisher:</strong><input id="host" type="text" placeholder="cppm-pub.example.com or https://pub">
-    <strong>Token:</strong><input id="token" type="password" placeholder="ClearPass API token">
-    <label><input id="verify" type="checkbox" checked> Verify TLS</label>
-    <button id="connectBtn" class="btn">Connect</button>
-    <span id="status" class="muted"></span>
-  </div>
-  <div class="row" style="margin-top:8px;">
-    <strong>Filter services:</strong>
-    <label><input type="checkbox" class="svc" value="RADIUS" checked> RADIUS</label>
-    <label><input type="checkbox" class="svc" value="HTTPS(RSA)" checked> HTTPS(RSA)</label>
-    <label><input type="checkbox" class="svc" value="HTTPS(ECC)" checked> HTTPS(ECC)</label>
-    <label><input type="checkbox" class="svc" value="RadSec" checked> RadSec</label>
-  </div>
+  <div class="topbar-grid">
+    <div class="panel">
+      <div class="panel-title">Step 1: Connect</div>
+      <div class="stack">
+        <div class="row">
+          <strong>Publisher:</strong><input id="host" type="text" placeholder="cppm-pub.example.com or https://pub">
+        </div>
+        <div class="row">
+          <strong>Token:</strong><input id="token" type="password" placeholder="ClearPass API token">
+        </div>
+        <div class="row">
+          <label><input id="verify" type="checkbox" checked> Verify TLS</label>
+          <button id="connectBtn" class="btn">Connect</button>
+        </div>
+        <div class="status-line"><span id="status" class="muted"></span></div>
+      </div>
+    </div>
 
-  <!-- Replacement section is hidden until connected -->
-  <div id="replaceSection" class="hidden">
-    <div class="row" style="margin-top:8px;">
-      <span class="pill dim">Step 2: Upload PFX</span>
-      <input type="file" id="pfxFile" accept=".pfx,.p12,application/x-pkcs12" disabled>
-      <input type="password" id="pfxPass" placeholder="PFX passphrase (optional)" disabled>
-      <button id="uploadBtn" class="btn" disabled>Upload & Host</button>
-      <span id="fileStatus" class="muted"></span>
+    <!-- Replacement section is hidden until connected -->
+    <div id="replaceSection" class="panel hidden">
+      <div class="panel-title">Step 2: Upload & Trust</div>
+      <div class="stack">
+        <div class="row">
+          <input type="file" id="pfxFile" accept=".pfx,.p12,application/x-pkcs12" disabled>
+          <input type="password" id="pfxPass" placeholder="PFX passphrase (optional)" disabled>
+          <button id="uploadBtn" class="btn" disabled>Upload & Host</button>
+        </div>
+        <div class="row">
+          <button id="importTrustBtn" class="btn" disabled>Import Trust</button>
+          <span class="dim">Usage: <code>Others</code></span>
+        </div>
+        <div class="row">
+          <span id="fileStatus" class="muted"></span>
+          <span id="trustStatus" class="muted"></span>
+        </div>
+      </div>
     </div>
-    <div class="row" style="margin-top:8px;">
-      <span class="pill dim">Step 2.5: Import CA/Intermediates to Trust</span>
-      <span class="dim">Usage: <code>Others</code></span>
-      <button id="importTrustBtn" class="btn" disabled>Import Trust</button>
-      <span id="trustStatus" class="muted"></span>
-    </div>
-    <div class="row" style="margin-top:8px;">
-      <span class="pill dim">Step 3: Select targets</span>
-      <label><input id="selAll" type="checkbox"> Select visible</label>
-      <button id="replaceBtn" class="btn-danger" disabled>Replace Certificate…</button>
-      <span class="dim">(select rows to target, then click Replace)</span>
+
+    <div id="replaceSection2" class="panel hidden">
+      <div class="panel-title">Step 3: Replace</div>
+      <div class="stack">
+        <div class="row">
+          <label><input id="selAll" type="checkbox"> Select visible</label>
+          <button id="replaceBtn" class="btn-danger" disabled>Replace Certificate…</button>
+        </div>
+        <div class="row">
+          <span class="dim">Select rows to target, then click Replace.</span>
+        </div>
+      </div>
     </div>
   </div>
+</div>
+
+<div id="filterRow" class="row hidden" style="margin-top:8px;">
+  <strong>Filter services:</strong>
+  <label><input type="checkbox" class="svc" value="RADIUS" checked> RADIUS</label>
+  <label><input type="checkbox" class="svc" value="HTTPS(RSA)" checked> HTTPS(RSA)</label>
+  <label><input type="checkbox" class="svc" value="HTTPS(ECC)" checked> HTTPS(ECC)</label>
+  <label><input type="checkbox" class="svc" value="RadSec" checked> RadSec</label>
 </div>
 
 <table id="grid" style="display:none">
@@ -479,7 +511,7 @@ body.modal-open{ overflow:hidden; }
       <input type="text" id="modalUrl" style="width:100%;padding:8px" />
     </div>
     <div style="margin-top:10px;">
-      <label>Enter passphrase (optional):</label><br/>
+      <label>Enter passphrase:</label><br/>
       <input type="password" id="modalPass" style="width:100%;padding:8px" />
     </div>
     <div style="margin-top:10px;">
@@ -544,9 +576,9 @@ function showResultsModal(payload){
     const div = document.createElement('div');
     div.className = 'res-row';
     div.innerHTML = `
-      <div class="${ok?'res-ok':'res-bad'}">${ok?'✅':'❌'}</div>
+      <div class="${ok?'res-ok':'res-bad'}">${ok?'âœ…':'âŒ'}</div>
       <div>
-        <div><strong>${esc(r.server_label||'')}</strong> — ${esc(r.service||'')}</div>
+        <div><strong>${esc(r.server_label||'')}</strong> â€” ${esc(r.service||'')}</div>
         <pre style="margin:6px 0 0;white-space:pre-wrap">${esc(prettyMsg)}</pre>
       </div>
       <div><span class="badge-min">${r.status ?? ''}</span></div>
@@ -646,6 +678,11 @@ function renderTable(){
     tbody.appendChild(tr);
   });
   grid.style.display = viewRows.length ? '' : 'none';
+  const filterRow = document.getElementById('filterRow');
+  if (filterRow) {
+    filterRow.style.display = viewRows.length ? '' : 'none';
+    filterRow.classList.toggle('hidden', viewRows.length === 0);
+  }
   $('detailHeader').classList.add('hidden'); $('details').classList.add('hidden'); $('detailBtns').classList.add('hidden');
   selectedIndex=-1;
 
@@ -662,8 +699,11 @@ function selectRow(i){
   parts.push('Server: ' + (r.server_label||'')); parts.push('Service: ' + (r.service||'')); parts.push('Server UUID: ' + (r.server_uuid||''));
   parts.push('Enabled: ' + (r.enabled_str||'')); parts.push('Subject: ' + (r.subject||'')); parts.push('Issuer: ' + (r.issuer||''));
   parts.push('Issued Date: ' + (r.issued_date||'')); parts.push('Expiry Date: ' + (r.expiry_date||''));
-  parts.push(''); parts.push('PEM:\n' + (r.pem||'')); parts.push(''); parts.push('Raw JSON:\n' + JSON.stringify(r.raw||{}, null, 2));
-  $('details').textContent=parts.join('\n');
+  parts.push(''); parts.push('PEM:\
+' + (r.pem||'')); parts.push(''); parts.push('Raw JSON:\
+' + JSON.stringify(r.raw||{}, null, 2));
+  $('details').textContent=parts.join('\
+');
 }
 
 $('copyPemBtn').addEventListener('click', async ()=>{
@@ -732,7 +772,7 @@ $('connectBtn').addEventListener('click', async ()=>{
     try {
       const j = JSON.parse(msg);
       const parts = [j.error || 'Failed'];
-      if (j.hint) parts.push('— ' + j.hint);
+      if (j.hint) parts.push('â€” ' + j.hint);
       setStatus(parts.join(' '));
     } catch(_) {
       setStatus('Failed: ' + msg);
@@ -754,11 +794,35 @@ $('uploadBtn').addEventListener('click', async ()=>{
     hostedTokenForTrust = j.token;
     uploadedPass = $('pfxPass').value || '';
     $('fileStatus').textContent = 'Hosted: ' + hostedUrl;
-    updateReplaceEnabled();  // <— enable Replace if rows are already selected
+    updateReplaceEnabled();  // <â€” enable Replace if rows are already selected
+    const rs2 = document.getElementById('replaceSection2'); if (rs2) rs2.classList.remove('hidden');
     $('importTrustBtn').disabled = false;
+    // Check if CA/intermediates already exist in the trust list
+    try{
+      $('trustStatus').textContent = 'Checking trust list...';
+      const check = await postJSON('/api/check-trust-from-pfx', {
+        pfx_token: hostedTokenForTrust,
+        passphrase: $('pfxPass').value || ''
+      });
+      if (check.all_present){
+        $('importTrustBtn').disabled = true;
+        $('trustStatus').textContent = 'CA/intermediate certificates already present in trust list. Import disabled.';
+      } else if (check.matched > 0){
+        $('trustStatus').textContent = `Found ${check.matched} of ${check.total} already in trust list.`;
+      } else {
+        $('trustStatus').textContent = '';
+      }
+    }catch(e){
+      $('trustStatus').textContent = 'Trust list check failed: ' + e.message;
+    }
   }catch(e){
     $('fileStatus').textContent = 'Upload failed: ' + e.message;
   }
+});
+
+// Keep passphrase in sync so the modal can reuse it without re-entry
+$('pfxPass').addEventListener('input', ()=>{
+  uploadedPass = $('pfxPass').value || '';
 });
 
 // ---- Import CA/intermediates to Trust ----
@@ -766,7 +830,7 @@ $('importTrustBtn').addEventListener('click', async ()=>{
   try{
     if(!hostedTokenForTrust){ $('trustStatus').textContent='Upload a PFX first'; return; }
     $('importTrustBtn').disabled = true;
-    $('trustStatus').textContent = 'Importing chain into trust list…';
+    $('trustStatus').textContent = 'Importing chain into trust listâ€¦';
     const j = await postJSON('/api/import-trust-from-pfx', {
     pfx_token: hostedTokenForTrust,
     passphrase: $('pfxPass').value || '',
@@ -789,14 +853,15 @@ $('replaceBtn').addEventListener('click', ()=>{
   const body = [
     'You are about to replace certificates for the following targets:',
     '',
-    ...t.map(x => `• ${x.server_label} — ${x.service}`),
+    ...t.map(x => `â€¢ ${x.server_label} â€” ${x.service}`),
     '',
     'This will call PUT /api/server-cert/name/{server_uuid}/{service_name} on the Publisher.',
     'Ensure ClearPass can reach the PKCS#12 URL over HTTP.'
-  ].join('\n');
+  ].join('\
+');
   $('modalBody').textContent = body;
   $('modalUrl').value = hostedUrl || '';
-  $('modalPass').value = uploadedPass || '';
+  $('modalPass').value = $('pfxPass').value || uploadedPass || '';
   $('confirmCount').textContent = String(t.length);
   $('confirmInput').value = '';
   $('modalDo').disabled = true;
@@ -885,7 +950,7 @@ def api_connect_and_scan():
         if "OAuth failed 401" in em or "OAuth failed 403" in em or "No token" in em or "token" in em.lower():
             return jsonify(
                 error="Authentication failed",
-                hint="Token is invalid or lacks permissions. Check Administration → API Services → API Clients.",
+                hint="Token is invalid or lacks permissions. Check Administration â†’ API Services â†’ API Clients.",
                 details=em
             ), 401
         return jsonify(error="Connect failed, Check credentials", details=em), 500
@@ -1000,6 +1065,69 @@ def _openssl_extract_chain(pfx_path: pathlib.Path, passphrase: str):
 
     print(f"[DEBUG] Extracted {len(certs)} cert(s) from PFX in pure Python.")
     return certs
+
+def _normalize_fingerprint(fp: str) -> str:
+    if not fp:
+        return ""
+    return re.sub(r"[^A-Fa-f0-9]", "", str(fp)).upper()
+
+def _fingerprint_from_pem(pem: str) -> str:
+    try:
+        cert = x509.load_pem_x509_certificate(pem.encode("utf-8"))
+        return cert.fingerprint(hashes.SHA1()).hex().upper()
+    except Exception:
+        return ""
+
+@app.route("/api/check-trust-from-pfx", methods=["POST"])
+def api_check_trust_from_pfx():
+    api = _get_api()
+    data = request.get_json(force=True, silent=True) or {}
+    token = (data.get("pfx_token") or "").strip()
+    passphrase = data.get("passphrase") or ""
+
+    if not token:
+        return jsonify(error="pfx_token required"), 400
+
+    pfx_path = UPLOAD_DIR / f"{token}.p12"
+    if not pfx_path.exists():
+        return jsonify(error="uploaded PFX not found or expired"), 404
+
+    # Extract chain
+    try:
+        certs = _openssl_extract_chain(pfx_path, passphrase)
+    except Exception as e:
+        print("[ERROR] OpenSSL extraction failed:", e)
+        return jsonify(error=str(e)), 500
+
+    if not certs:
+        return jsonify(error="No CA/chain certificates found in PFX"), 400
+
+    # Get trust list and build a fingerprint set
+    trust_list = api.list_trust_certs()
+    existing_fps = set()
+    for c in trust_list:
+        fp = first_of(c, ["thumbprint", "fingerprint", "sha1", "sha1_fingerprint", "sha1Fingerprint"])
+        fp = _normalize_fingerprint(fp)
+        if not fp:
+            pem = first_of(c, ["pem", "certificate", "cert_file"])
+            if pem:
+                fp = _normalize_fingerprint(_fingerprint_from_pem(str(pem)))
+        if fp:
+            existing_fps.add(fp)
+
+    # Compare with PFX chain
+    pfx_fps = []
+    for pem in certs:
+        fp = _normalize_fingerprint(_fingerprint_from_pem(pem))
+        if fp:
+            pfx_fps.append(fp)
+
+    matched = [fp for fp in pfx_fps if fp in existing_fps]
+    return jsonify({
+        "total": len(pfx_fps),
+        "matched": len(matched),
+        "all_present": (len(pfx_fps) > 0 and len(matched) == len(pfx_fps))
+    })
 
 @app.route("/api/import-trust-from-pfx", methods=["POST"])
 def api_import_trust_from_pfx():
@@ -1122,7 +1250,7 @@ def shutdown():
     if func is None:
         os._exit(0)
     threading.Timer(0.05, func).start()
-    return jsonify(message="Server shutting down… uploads cleaned.")
+    return jsonify(message="Server shutting downâ€¦ uploads cleaned.")
 
 # -------------------- Run --------------------
 if __name__ == "__main__":
@@ -1139,3 +1267,6 @@ if __name__ == "__main__":
     import logging as _log
     _log.getLogger("werkzeug").setLevel(_log.INFO)
     app.run(host=host, port=port, debug=False)
+
+
+

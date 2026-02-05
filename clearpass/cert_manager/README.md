@@ -53,7 +53,32 @@ Notes:
   - `POST /api/cert-trust-list`
 - If you use client ID/secret instead of a static token, ensure the client can obtain tokens from `POST /api/oauth`.
 
-If you're unsure where to create API clients or which roles to assign, follow your organization’s ClearPass API documentation and security guidelines.
+Some users already have an API client; others need to create both the Operator Profile and API client first.
+
+### If you already have an API client with proper permissions
+
+1. Open the existing API client in ClearPass.
+2. Generate or copy the access token.
+3. Paste the token into the UI's **Token** field.
+![Get API Token](screenshots/generate-token.jpg)
+
+### If you need to create the Operator Profile and API client
+
+If you're unsure about creating API clients, follow your organization’s security guidelines.
+
+1. Create an Operator Profile for **Platform Certificate Manager**.
+  ![Operator Profile - Platform Certificate Manager](screenshots/operator-profile-platform-certificate-manager.jpg)
+2. Assign the required permissions.
+  ![Operator Profile Permissions - API Services](screenshots/permissions-api-services.jpg)
+  ![Operator Profile Permissions - Platform](screenshots/permissions-platform.jpg)
+  ![Operator Profile Permissions - Policy Manager](screenshots/permissions-policy-manager.jpg)
+3. Create a new API client and associate it with that operator profile.
+  ![Create API Client](screenshots/create-api-client.jpg)
+
+  ![Create API Client](screenshots/create-api-client-secret.jpg)
+4. Generate the access token.
+  ![Get API Token](screenshots/generate-token.jpg)
+5. Paste the token into the UI's **Token** field.
 
 ## Operational Notes
 
