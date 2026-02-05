@@ -64,7 +64,7 @@ Some users already have an API client; others need to create both the Operator P
 
 ### If you need to create the Operator Profile and API client
 
-If you're unsure about creating API clients, follow your organization’s security guidelines.
+If you're unsure about creating API clients, follow your organization's security guidelines.
 
 1. Create an Operator Profile for **Platform Certificate Manager**.
   ![Operator Profile - Platform Certificate Manager](screenshots/operator-profile-platform-certificate-manager.jpg)
@@ -80,8 +80,33 @@ If you're unsure about creating API clients, follow your organization’s securi
   ![Get API Token](screenshots/generate-token.jpg)
 5. Paste the token into the UI's **Token** field.
 
+## Token Privileges Check
+
+On connect, the UI verifies the token has the required privileges by calling:
+
+```
+GET /api/oauth/privileges
+```
+
+The token must include these privileges:
+
+```
+#admin_restore
+%cppm_cert_trust_list
+%cppm_certificates
+?api_index
+?cppm_config
+?platform
+apigility
+```
+
+If any are missing, the connection will fail and the UI will list the missing items.
+
 ## Operational Notes
 
+- Step 2 in the UI is **Upload & Host**.
+- Step 3 is **Trust List** (import CA/intermediates).
+- Step 4 is **Replace** (apply the hosted PKCS#12 to selected services).
 - ClearPass must be able to reach the PKCS#12 file URL hosted by this tool.
 - If ClearPass cannot reach your machine, place the PKCS#12 file on a reachable HTTP server and paste that URL into the UI.
 - This is intended for development/ops use; run behind a proper WSGI server for production usage.

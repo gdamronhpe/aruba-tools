@@ -16,6 +16,15 @@ warnings.filterwarnings("ignore", category=UnknownTimezoneWarning)
 
 # -------------------- Helpers / constants --------------------
 SERVICE_NAMES = ["RADIUS", "HTTPS(RSA)", "HTTPS(ECC)", "RadSec"]
+REQUIRED_PRIVILEGES = {
+    "#admin_restore",
+    "%cppm_cert_trust_list",
+    "%cppm_certificates",
+    "?api_index",
+    "?cppm_config",
+    "?platform",
+    "apigility",
+}
 
 def canonical_service_name(s: str) -> str:
     if not s: return s
@@ -239,6 +248,12 @@ class ClearPassAPI:
         data = self._get("/api/cert-trust-list")
         return self._extract_list(data)
 
+    def list_privileges(self):
+        data = self._get("/api/oauth/privileges")
+        if isinstance(data, dict) and isinstance(data.get("privileges"), list):
+            return data.get("privileges")
+        return []
+
 # -------------------- Flask app & file hosting --------------------
 app = Flask(__name__)
 app.config["JSONIFY_PRETTYPRINT_REGULAR"] = True
@@ -327,7 +342,7 @@ def index():
  .row{display:flex;gap:12px;flex-wrap:wrap;align-items:center}
  input[type=text],input[type=password]{padding:8px;min-width:240px}
  button{padding:8px 12px;cursor:pointer}
- table{border-collapse:collapse;width:100%;margin-top:12px}
+ table{border-collapse:collapse;width:100%;margin-top:0}
  th,td{border-bottom:1px solid #ddd;padding:6px 8px;text-align:left;user-select:none}
  th{cursor:pointer}
 #modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.45);
@@ -336,8 +351,8 @@ def index():
  tr:hover{background:#fafafa}
  .muted{color:#666}
  .topbar{position:sticky;top:0;background:#fff;padding:10px 0;border-bottom:1px solid #eee;z-index:10}
- .th-sort-asc::after{content:" â–²";font-size:12px;color:#666}
- .th-sort-desc::after{content:" â–¼";font-size:12px;color:#666}
+ .th-sort-asc::after{content:" ^";font-size:12px;color:#666}
+ .th-sort-desc::after{content:" v";font-size:12px;color:#666}
  .badge{display:inline-block;padding:2px 6px;border-radius:4px;background:#eef}
  .danger{color:#b42318}
  .dim{color:#777}
@@ -400,8 +415,10 @@ body.modal-open{ overflow:hidden; }
 .res-bad{color:#b42318}
 .badge-min{font:12px/1 ui-sans-serif,system-ui,Arial;padding:2px 6px;border-radius:999px;border:1px solid #ddd;background:#fff;white-space:nowrap}
 .hidden{display:none}
+.details-box{white-space:pre-wrap;background:#fafafa;border:1px solid #eee;padding:10px;border-radius:8px;font:12px/1.4 ui-monospace,Consolas,Menlo,monospace}
 </style>
 </head><body>
+<h2 style="margin:0 0 10px 0;">ClearPass Certificate Manager</h2>
 <div class="topbar">
   <div class="topbar-grid">
     <div class="panel">
@@ -423,7 +440,7 @@ body.modal-open{ overflow:hidden; }
 
     <!-- Replacement section is hidden until connected -->
     <div id="replaceSection" class="panel hidden">
-      <div class="panel-title">Step 2: Upload & Trust</div>
+      <div class="panel-title">Step 2: Upload & Host</div>
       <div class="stack">
         <div class="row">
           <input type="file" id="pfxFile" accept=".pfx,.p12,application/x-pkcs12" disabled>
@@ -431,22 +448,30 @@ body.modal-open{ overflow:hidden; }
           <button id="uploadBtn" class="btn" disabled>Upload & Host</button>
         </div>
         <div class="row">
+          <span id="fileStatus" class="muted"></span>
+        </div>
+      </div>
+    </div>
+
+    <div id="trustSection" class="panel hidden">
+      <div class="panel-title">Step 3: Trust List</div>
+      <div class="stack">
+        <div class="row">
           <button id="importTrustBtn" class="btn" disabled>Import Trust</button>
           <span class="dim">Usage: <code>Others</code></span>
         </div>
         <div class="row">
-          <span id="fileStatus" class="muted"></span>
           <span id="trustStatus" class="muted"></span>
         </div>
       </div>
     </div>
 
     <div id="replaceSection2" class="panel hidden">
-      <div class="panel-title">Step 3: Replace</div>
+      <div class="panel-title">Step 4: Replace</div>
       <div class="stack">
         <div class="row">
           <label><input id="selAll" type="checkbox"> Select visible</label>
-          <button id="replaceBtn" class="btn-danger" disabled>Replace Certificate…</button>
+          <button id="replaceBtn" class="btn-danger" disabled>Replace Certificate...</button>
         </div>
         <div class="row">
           <span class="dim">Select rows to target, then click Replace.</span>
@@ -456,16 +481,19 @@ body.modal-open{ overflow:hidden; }
   </div>
 </div>
 
-<div id="filterRow" class="row hidden" style="margin-top:8px;">
-  <strong>Filter services:</strong>
-  <label><input type="checkbox" class="svc" value="RADIUS" checked> RADIUS</label>
-  <label><input type="checkbox" class="svc" value="HTTPS(RSA)" checked> HTTPS(RSA)</label>
-  <label><input type="checkbox" class="svc" value="HTTPS(ECC)" checked> HTTPS(ECC)</label>
-  <label><input type="checkbox" class="svc" value="RadSec" checked> RadSec</label>
-</div>
-
 <table id="grid" style="display:none">
   <thead>
+    <tr id="filterRow" style="display:none">
+      <td colspan="8">
+        <div class="row" style="margin-top:8px;margin-bottom:0;">
+          <strong>Filter services:</strong>
+          <label><input type="checkbox" class="svc" value="RADIUS" checked> RADIUS</label>
+          <label><input type="checkbox" class="svc" value="HTTPS(RSA)" checked> HTTPS(RSA)</label>
+          <label><input type="checkbox" class="svc" value="HTTPS(ECC)" checked> HTTPS(ECC)</label>
+          <label><input type="checkbox" class="svc" value="RadSec" checked> RadSec</label>
+        </div>
+      </td>
+    </tr>
     <tr>
       <th data-key="__check" style="width:28px;"><input type="checkbox" id="hdrCheck"></th>
       <th data-key="server_label">Server</th>
@@ -481,7 +509,7 @@ body.modal-open{ overflow:hidden; }
 </table>
 
 <h3 id="detailHeader" class="hidden">Details</h3>
-<div id="details" class="hidden"></div>
+<div id="details" class="details-box hidden"></div>
 <div class="row hidden" id="detailBtns" style="margin-top:8px;">
   <button id="copyPemBtn" class="btn">Copy PEM</button>
 </div>
@@ -554,6 +582,48 @@ function svcFilter(){return new Set(Array.from(document.querySelectorAll(".svc:c
 function showModal(){ $('modal').classList.add('show'); }
 function hideModal(){ $('modal').classList.remove('show'); }
 
+// Ensure a single source of truth for the .svc filter controls: relocate any
+// stray controls into the table's filterRow (or create the row if missing).
+document.addEventListener('DOMContentLoaded', ()=>{
+  const grid = document.getElementById('grid');
+  const tableFilter = document.getElementById('filterRow');
+  // Gather .svc controls that are NOT inside the table (stray duplicates)
+  const stray = Array.from(document.querySelectorAll('.svc')).filter(cb => !cb.closest('#grid'));
+
+  if (tableFilter) {
+    // Move stray controls into the table's filter row container
+    const container = tableFilter.querySelector('div.row') || tableFilter;
+    stray.forEach(cb=>{
+      const label = cb.closest('label') || cb.parentElement;
+      if (label) container.appendChild(label);
+    });
+  } else if (grid && stray.length) {
+    // If table has no filterRow yet, create it and move the stray controls in
+    const thead = grid.querySelector('thead') || grid;
+    const tr = document.createElement('tr'); tr.id = 'filterRow'; tr.style.display = 'none';
+    const td = document.createElement('td'); td.colSpan = 8;
+    const div = document.createElement('div'); div.className = 'row'; div.style.marginTop = '8px'; div.style.marginBottom = '0';
+    const strong = document.createElement('strong'); strong.textContent = 'Filter services:';
+    div.appendChild(strong);
+    stray.forEach(cb=>{
+      const label = cb.closest('label') || cb.parentElement;
+      if (label) div.appendChild(label);
+    });
+    td.appendChild(div); tr.appendChild(td); thead.appendChild(tr);
+  }
+
+  // Attach idempotent handlers to .svc inputs that are now inside the table
+  const fr = document.getElementById('filterRow');
+  if (fr) {
+    fr.querySelectorAll('.svc').forEach(cb=>{
+      if (!cb._hasFilterHandler){
+        cb.addEventListener('change', ()=>{ applyFiltersAndSort(); $('selAll').checked=false; });
+        cb._hasFilterHandler = true;
+      }
+    });
+  }
+});
+
 function asJSON(obj, indent=2){
   try{ return JSON.stringify(obj, null, indent); }catch(_){ return String(obj); }
 }
@@ -576,9 +646,9 @@ function showResultsModal(payload){
     const div = document.createElement('div');
     div.className = 'res-row';
     div.innerHTML = `
-      <div class="${ok?'res-ok':'res-bad'}">${ok?'âœ…':'âŒ'}</div>
+      <div class="${ok?'res-ok':'res-bad'}">${ok?'OK':'X'}</div>
       <div>
-        <div><strong>${esc(r.server_label||'')}</strong> â€” ${esc(r.service||'')}</div>
+        <div><strong>${esc(r.server_label||'')}</strong>  -  ${esc(r.service||'')}</div>
         <pre style="margin:6px 0 0;white-space:pre-wrap">${esc(prettyMsg)}</pre>
       </div>
       <div><span class="badge-min">${r.status ?? ''}</span></div>
@@ -680,8 +750,20 @@ function renderTable(){
   grid.style.display = viewRows.length ? '' : 'none';
   const filterRow = document.getElementById('filterRow');
   if (filterRow) {
-    filterRow.style.display = viewRows.length ? '' : 'none';
-    filterRow.classList.toggle('hidden', viewRows.length === 0);
+    const show = viewRows.length > 0;
+    // For a table-row we toggle its display to '' (default) or 'none'.
+    if (show) {
+      filterRow.style.display = '';
+      // Attach handlers to the checkboxes inside the filter row (idempotent)
+      filterRow.querySelectorAll('.svc').forEach(cb=>{
+        if (!cb._hasFilterHandler){
+          cb.addEventListener('change', ()=>{ applyFiltersAndSort(); $('selAll').checked=false; });
+          cb._hasFilterHandler = true;
+        }
+      });
+    } else {
+      filterRow.style.display = 'none';
+    }
   }
   $('detailHeader').classList.add('hidden'); $('details').classList.add('hidden'); $('detailBtns').classList.add('hidden');
   selectedIndex=-1;
@@ -696,14 +778,21 @@ function selectRow(i){
   selectedIndex=i; const r=viewRows[i];
   $('detailHeader').classList.remove('hidden'); $('details').classList.remove('hidden'); $('detailBtns').classList.remove('hidden');
   const parts=[];
-  parts.push('Server: ' + (r.server_label||'')); parts.push('Service: ' + (r.service||'')); parts.push('Server UUID: ' + (r.server_uuid||''));
-  parts.push('Enabled: ' + (r.enabled_str||'')); parts.push('Subject: ' + (r.subject||'')); parts.push('Issuer: ' + (r.issuer||''));
-  parts.push('Issued Date: ' + (r.issued_date||'')); parts.push('Expiry Date: ' + (r.expiry_date||''));
-  parts.push(''); parts.push('PEM:\
-' + (r.pem||'')); parts.push(''); parts.push('Raw JSON:\
-' + JSON.stringify(r.raw||{}, null, 2));
-  $('details').textContent=parts.join('\
-');
+  parts.push('Server: ' + (r.server_label||''));
+  parts.push('Service: ' + (r.service||''));
+  parts.push('Server UUID: ' + (r.server_uuid||''));
+  parts.push('Enabled: ' + (r.enabled_str||''));
+  parts.push('Subject: ' + (r.subject||''));
+  parts.push('Issuer: ' + (r.issuer||''));
+  parts.push('Issued Date: ' + (r.issued_date||''));
+  parts.push('Expiry Date: ' + (r.expiry_date||''));
+  parts.push('');
+  parts.push('PEM:');
+  parts.push(r.pem || '');
+  parts.push('');
+  parts.push('Raw JSON:');
+  parts.push(JSON.stringify(r.raw||{}, null, 2));
+  $('details').textContent = parts.join('\n');
 }
 
 $('copyPemBtn').addEventListener('click', async ()=>{
@@ -711,9 +800,8 @@ $('copyPemBtn').addEventListener('click', async ()=>{
   await navigator.clipboard.writeText(pem); setStatus('PEM copied to clipboard');
 });
 
-document.querySelectorAll('.svc').forEach(cb=>{
-  cb.addEventListener('change', ()=>{ applyFiltersAndSort(); $('selAll').checked=false; });
-});
+// Filter checkbox handlers are attached idempotently when the filterRow is shown
+// (keeps bindings local to the single filter row inside the table)
 
 $('hdrCheck').addEventListener('change', (e)=>{
   const v = e.target.checked;
@@ -772,7 +860,7 @@ $('connectBtn').addEventListener('click', async ()=>{
     try {
       const j = JSON.parse(msg);
       const parts = [j.error || 'Failed'];
-      if (j.hint) parts.push('â€” ' + j.hint);
+      if (j.hint) parts.push(' -  ' + j.hint);
       setStatus(parts.join(' '));
     } catch(_) {
       setStatus('Failed: ' + msg);
@@ -794,7 +882,8 @@ $('uploadBtn').addEventListener('click', async ()=>{
     hostedTokenForTrust = j.token;
     uploadedPass = $('pfxPass').value || '';
     $('fileStatus').textContent = 'Hosted: ' + hostedUrl;
-    updateReplaceEnabled();  // <â€” enable Replace if rows are already selected
+    updateReplaceEnabled();  // < -  enable Replace if rows are already selected
+    const trustSection = document.getElementById('trustSection'); if (trustSection) trustSection.classList.remove('hidden');
     const rs2 = document.getElementById('replaceSection2'); if (rs2) rs2.classList.remove('hidden');
     $('importTrustBtn').disabled = false;
     // Check if CA/intermediates already exist in the trust list
@@ -830,7 +919,7 @@ $('importTrustBtn').addEventListener('click', async ()=>{
   try{
     if(!hostedTokenForTrust){ $('trustStatus').textContent='Upload a PFX first'; return; }
     $('importTrustBtn').disabled = true;
-    $('trustStatus').textContent = 'Importing chain into trust listâ€¦';
+    $('trustStatus').textContent = 'Importing chain into trust list...';
     const j = await postJSON('/api/import-trust-from-pfx', {
     pfx_token: hostedTokenForTrust,
     passphrase: $('pfxPass').value || '',
@@ -853,12 +942,11 @@ $('replaceBtn').addEventListener('click', ()=>{
   const body = [
     'You are about to replace certificates for the following targets:',
     '',
-    ...t.map(x => `â€¢ ${x.server_label} â€” ${x.service}`),
+    ...t.map(x => `    * ${x.server_label}  -  ${x.service}`),
     '',
     'This will call PUT /api/server-cert/name/{server_uuid}/{service_name} on the Publisher.',
     'Ensure ClearPass can reach the PKCS#12 URL over HTTP.'
-  ].join('\
-');
+  ].join('\n');
   $('modalBody').textContent = body;
   $('modalUrl').value = hostedUrl || '';
   $('modalPass').value = $('pfxPass').value || uploadedPass || '';
@@ -950,10 +1038,28 @@ def api_connect_and_scan():
         if "OAuth failed 401" in em or "OAuth failed 403" in em or "No token" in em or "token" in em.lower():
             return jsonify(
                 error="Authentication failed",
-                hint="Token is invalid or lacks permissions. Check Administration â†’ API Services â†’ API Clients.",
+                hint="Token is invalid or lacks permissions. Check Administration -> API Services -> API Clients.",
                 details=em
             ), 401
         return jsonify(error="Connect failed, Check credentials", details=em), 500
+    # Check API token privileges
+    try:
+        privs = set(api.list_privileges() or [])
+        missing = sorted([p for p in REQUIRED_PRIVILEGES if p not in privs])
+        if missing:
+            return jsonify(
+                error="API token missing required privileges",
+                hint="Token must include the required ClearPass API privileges.",
+                required=sorted(REQUIRED_PRIVILEGES),
+                missing=missing
+            ), 403
+    except Exception as e:
+        return jsonify(
+            error="Unable to verify token privileges",
+            hint="Check that the Publisher is reachable and the token is valid.",
+            details=str(e)
+        ), 502
+
     sid = session.get("sid") or secrets.token_hex(8)
     session["sid"] = sid; _APIS[sid] = api
 
@@ -1250,7 +1356,7 @@ def shutdown():
     if func is None:
         os._exit(0)
     threading.Timer(0.05, func).start()
-    return jsonify(message="Server shutting downâ€¦ uploads cleaned.")
+    return jsonify(message="Server shutting down... uploads cleaned.")
 
 # -------------------- Run --------------------
 if __name__ == "__main__":
