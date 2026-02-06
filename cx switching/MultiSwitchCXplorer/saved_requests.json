@@ -1,0 +1,52 @@
+[
+  {
+    "name": "Interface Status",
+    "endpoint": "/system/interfaces",
+    "version": "10.04",
+    "depth": "2",
+    "selector": "status",
+    "attributes": "admin_state,oper_state,speed,duplex",
+    "verifyssl": false,
+    "concurrency": 5
+  },
+  {
+    "name": "Port Access Download Status",
+    "endpoint": "/system/port_access_roles",
+    "version": "10.04",
+    "depth": "2",
+    "selector": "",
+    "attributes": "download_status",
+    "verifyssl": false,
+    "concurrency": 5
+  },
+  {
+    "name": "Product Info",
+    "endpoint": "/system/subsystems/management_module,*",
+    "version": "10.04",
+    "depth": "1",
+    "selector": "status",
+    "attributes": "product_info",
+    "verifyssl": false,
+    "concurrency": 5
+  },
+  {
+    "name": "System Summary",
+    "endpoint": "/system",
+    "version": "10.04",
+    "depth": "1",
+    "selector": "",
+    "attributes": "hostname,platform_name,software_version",
+    "verifyssl": true,
+    "concurrency": 5
+  },
+  {
+    "name": "VLANs",
+    "endpoint": "/system/vlans",
+    "version": "10.04",
+    "depth": "2",
+    "selector": "",
+    "attributes": "id,name,description,admin,oper_state",
+    "verifyssl": true,
+    "concurrency": 5
+  }
+]

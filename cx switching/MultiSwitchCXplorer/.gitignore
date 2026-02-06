@@ -1,0 +1,17 @@
+﻿# Build outputs
+/dist/
+/build/
+*.spec
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
