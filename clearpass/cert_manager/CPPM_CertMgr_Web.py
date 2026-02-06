@@ -17,12 +17,9 @@ warnings.filterwarnings("ignore", category=UnknownTimezoneWarning)
 # -------------------- Helpers / constants --------------------
 SERVICE_NAMES = ["RADIUS", "HTTPS(RSA)", "HTTPS(ECC)", "RadSec"]
 REQUIRED_PRIVILEGES = {
-    "#admin_restore",
-    "%cppm_cert_trust_list",
-    "%cppm_certificates",
-    "?api_index",
-    "?cppm_config",
-    "?platform",
+    "admin_restore",
+    "cppm_cert_trust_list",
+    "cppm_certificates",
     "apigility",
 }
 
@@ -1045,7 +1042,16 @@ def api_connect_and_scan():
     # Check API token privileges
     try:
         privs = set(api.list_privileges() or [])
-        missing = sorted([p for p in REQUIRED_PRIVILEGES if p not in privs])
+        normalized = set(privs)
+        # Allow admin_restore with or without leading '#'
+        if "#admin_restore" in normalized and "admin_restore" not in normalized:
+            normalized.add("admin_restore")
+        # Allow cppm_* with or without leading '%'
+        if "%cppm_cert_trust_list" in normalized and "cppm_cert_trust_list" not in normalized:
+            normalized.add("cppm_cert_trust_list")
+        if "%cppm_certificates" in normalized and "cppm_certificates" not in normalized:
+            normalized.add("cppm_certificates")
+        missing = sorted([p for p in REQUIRED_PRIVILEGES if p not in normalized])
         if missing:
             return jsonify(
                 error="API token missing required privileges",
@@ -1364,7 +1370,7 @@ if __name__ == "__main__":
     # Bind to all interfaces so remote ClearPass instances can fetch hosted PKCS#12 files.
     # Note: ensure your machine's firewall allows incoming connections on the chosen port.
     host = "0.0.0.0"
-    port = 5000
+    port = 81
     # Show a LAN-accessible URL in the console/browser (useful when running on a machine with a LAN IP)
     public_host = get_lan_ip()
     url = f"http://{public_host}:{port}/"
